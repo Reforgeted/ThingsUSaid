@@ -94,17 +94,19 @@ fun NoteListScreen(
         NoteEditBottomSheet(
             note = editingNote,
             onDismiss = { showEditSheet = false },
-            onSave = { title, content, isTodo ->
+            onSave = { title, content, isTodo, dueDate, reminderTime ->
                 if (editingNote != null) {
                     viewModel.updateNote(
                         editingNote!!.copy(
                             title = title,
                             content = content,
-                            isTodo = isTodo
+                            isTodo = isTodo,
+                            dueDate = dueDate,
+                            reminderTime = reminderTime
                         )
                     )
                 } else {
-                    viewModel.addNote(title, content, isTodo)
+                    viewModel.addNote(title, content, isTodo, dueDate, reminderTime)
                 }
             },
             onDelete = editingNote?.let { note ->

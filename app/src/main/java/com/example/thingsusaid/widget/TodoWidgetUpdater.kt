@@ -13,27 +13,38 @@ import kotlinx.coroutines.withContext
 object TodoWidgetUpdater {
 
     suspend fun updateAll(context: Context) {
-        withContext(Dispatchers.IO) {
-            try {
+        try {
+            val glanceManager = GlanceAppWidgetManager(context)
+            val glanceIds = glanceManager.getGlanceIds(TodoGlanceWidget::class.java)
+
+            if (glanceIds.isNotEmpty()) {
+                val widget = TodoGlanceWidget()
+                glanceIds.forEach { glanceId ->
+                    try {
+                        widget.update(context, glanceId)
+                        Log.d("TodoWidgetUpdater", "Glance widget updated directly")
+                    } catch (e: Exception) {
+                        Log.e("TodoWidgetUpdater", "Failed to directly update widget", e)
+                    }
+                }
+
+                // 同时发送广播，确保 Receiver 也触发更新
                 val appWidgetManager = AppWidgetManager.getInstance(context)
                 val componentName = ComponentName(context, TodoGlanceWidgetReceiver::class.java)
                 val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-
                 if (appWidgetIds.isNotEmpty()) {
-                    updateAppWidgetIds(context, appWidgetIds)
-
                     val intent = Intent(context, TodoGlanceWidgetReceiver::class.java).apply {
                         action = TodoGlanceWidgetReceiver.ACTION_CUSTOM_UPDATE
                         putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, appWidgetIds)
                     }
                     context.sendBroadcast(intent)
                     Log.d("TodoWidgetUpdater", "Custom broadcast sent to ${appWidgetIds.size} widget(s)")
-                } else {
-                    Log.d("TodoWidgetUpdater", "No widgets found to update")
                 }
-            } catch (e: Exception) {
-                Log.e("TodoWidgetUpdater", "Failed to broadcast updateAll", e)
+            } else {
+                Log.d("TodoWidgetUpdater", "No widgets found to update")
             }
+        } catch (e: Exception) {
+            Log.e("TodoWidgetUpdater", "Failed to updateAll", e)
         }
     }
 
@@ -63,18 +74,16 @@ object TodoWidgetUpdater {
     }
 
     suspend fun updateAppWidgetIds(context: Context, appWidgetIds: IntArray) {
-        withContext(Dispatchers.IO) {
-            val glanceManager = GlanceAppWidgetManager(context)
-            val widget = TodoGlanceWidget()
+        val glanceManager = GlanceAppWidgetManager(context)
+        val widget = TodoGlanceWidget()
 
-            appWidgetIds.distinct().forEach { appWidgetId ->
-                try {
-                    val glanceId = glanceManager.getGlanceIdBy(appWidgetId)
-                    widget.update(context, glanceId)
-                    Log.d("TodoWidgetUpdater", "Glance widget $appWidgetId updated directly")
-                } catch (e: Exception) {
-                    Log.e("TodoWidgetUpdater", "Failed to directly update widget $appWidgetId", e)
-                }
+        appWidgetIds.distinct().forEach { appWidgetId ->
+            try {
+                val glanceId = glanceManager.getGlanceIdBy(appWidgetId)
+                widget.update(context, glanceId)
+                Log.d("TodoWidgetUpdater", "Glance widget $appWidgetId updated directly")
+            } catch (e: Exception) {
+                Log.e("TodoWidgetUpdater", "Failed to directly update widget $appWidgetId", e)
             }
         }
     }

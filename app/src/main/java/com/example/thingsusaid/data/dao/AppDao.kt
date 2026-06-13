@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.example.thingsusaid.data.entity.AppSetting
 import com.example.thingsusaid.data.entity.Category
 import com.example.thingsusaid.data.entity.Note
 import com.example.thingsusaid.data.entity.WidgetConfig
@@ -60,6 +61,9 @@ interface AppDao {
     @Query("UPDATE notes SET isCompleted = :completed, updatedAt = :updatedAt WHERE noteId = :noteId")
     suspend fun updateNoteCompletion(noteId: Long, completed: Boolean, updatedAt: Long = System.currentTimeMillis())
 
+    @Query("SELECT * FROM notes WHERE reminderTime IS NOT NULL AND reminderTime > :currentTime")
+    suspend fun getNotesWithFutureReminders(currentTime: Long = System.currentTimeMillis()): List<Note>
+
     // ==================== 小组件配置操作 ====================
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -76,4 +80,15 @@ interface AppDao {
 
     @Query("SELECT * FROM widget_configs WHERE boundCategoryId = :categoryId")
     suspend fun getWidgetConfigsByCategoryId(categoryId: Long): List<WidgetConfig>
+
+    // ==================== 应用设置操作 ====================
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveSetting(setting: AppSetting)
+
+    @Query("SELECT * FROM app_settings WHERE `key` = :key")
+    suspend fun getSetting(key: String): AppSetting?
+
+    @Query("SELECT * FROM app_settings WHERE `key` = :key")
+    fun getSettingFlow(key: String): Flow<AppSetting?>
 }

@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.thingsusaid.data.AppDatabase
 import com.example.thingsusaid.data.entity.Category
 import com.example.thingsusaid.data.entity.Note
+import com.example.thingsusaid.notification.ReminderScheduler
 import com.example.thingsusaid.widget.TodoWidgetUpdater
 import kotlinx.coroutines.flow.Flow
 
@@ -83,20 +84,45 @@ class AppRepository(context: Context) {
         return dao.getNotesByCategoryFlow(categoryId)
     }
 
-    suspend fun addNote(categoryId: Long, title: String, content: String, isTodo: Boolean): Long {
+    suspend fun addNote(
+        categoryId: Long,
+        title: String,
+        content: String,
+        isTodo: Boolean,
+        dueDate: Long? = null,
+        reminderTime: Long? = null
+    ): Long {
         val id = dao.insertNote(
-            Note(categoryId = categoryId, title = title, content = content, isTodo = isTodo)
+            Note(
+                categoryId = categoryId,
+                title = title,
+                content = content,
+                isTodo = isTodo,
+                dueDate = dueDate,
+                reminderTime = reminderTime
+            )
         )
+        if (reminderTime != null && reminderTime > System.currentTimeMillis()) {
+            ReminderScheduler.scheduleReminder(appContext, id, reminderTime)
+        }
         TodoWidgetUpdater.updateForCategory(appContext, categoryId)
         return id
     }
 
     suspend fun updateNote(note: Note) {
         dao.updateNote(note)
+        // 重新调度提醒
+        ReminderScheduler.cancelReminder(appContext, note.noteId)
+        note.reminderTime?.let {
+            if (it > System.currentTimeMillis()) {
+                ReminderScheduler.scheduleReminder(appContext, note.noteId, it)
+            }
+        }
         TodoWidgetUpdater.updateForCategory(appContext, note.categoryId)
     }
 
     suspend fun deleteNote(note: Note) {
+        ReminderScheduler.cancelReminder(appContext, note.noteId)
         dao.deleteNote(note)
         TodoWidgetUpdater.updateForCategory(appContext, note.categoryId)
     }
@@ -107,6 +133,10 @@ class AppRepository(context: Context) {
         val note = dao.getNoteById(noteId)
         dao.updateNoteCompletion(noteId, !current)
         note?.let {
+            // 如果标记为完成，取消提醒
+            if (!current) {
+                ReminderScheduler.cancelReminder(appContext, noteId)
+            }
             TodoWidgetUpdater.updateForCategory(appContext, it.categoryId)
         }
     }

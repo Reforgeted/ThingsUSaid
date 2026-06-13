@@ -37,9 +37,9 @@ class NoteListViewModel(
             initialValue = emptyList()
         )
 
-    fun addNote(title: String, content: String, isTodo: Boolean) {
+    fun addNote(title: String, content: String, isTodo: Boolean, dueDate: Long? = null, reminderTime: Long? = null) {
         viewModelScope.launch {
-            repository.addNote(categoryId, title, content, isTodo)
+            repository.addNote(categoryId, title, content, isTodo, dueDate, reminderTime)
         }
     }
 

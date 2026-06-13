@@ -73,18 +73,36 @@ fun NoteItem(
                     )
                 }
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = formatDate(note.createdAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.alpha(alpha)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = formatDate(note.createdAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.alpha(alpha)
+                    )
+                    if (note.reminderTime != null && note.isTodo) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        val reminderText = formatReminder(note.reminderTime)
+                        val isOverdue = note.reminderTime < System.currentTimeMillis() && !note.isCompleted
+                        Text(
+                            text = "⏰ $reminderText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.alpha(alpha)
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 private fun formatDate(timestamp: Long): String {
+    val sdf = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
+
+private fun formatReminder(timestamp: Long): String {
     val sdf = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
     return sdf.format(Date(timestamp))
 }
