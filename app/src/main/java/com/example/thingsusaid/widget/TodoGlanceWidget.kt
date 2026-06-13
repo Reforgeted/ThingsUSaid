@@ -30,13 +30,14 @@ import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.width
+import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextDecoration
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.example.thingsusaid.R
 import com.example.thingsusaid.data.AppDatabase
 import com.example.thingsusaid.data.dao.AppDao
-import com.example.thingsusaid.data.entity.AppSetting
 import com.example.thingsusaid.data.entity.Category
 import com.example.thingsusaid.data.entity.Note
 import com.example.thingsusaid.data.entity.WidgetConfig
@@ -111,11 +112,6 @@ private fun WidgetContent(
         2 -> 16.sp
         else -> 14.sp
     }
-    val titleSize = when (fontSizeIndex) {
-        0 -> 16.sp
-        2 -> 20.sp
-        else -> 18.sp
-    }
 
     val config by dao.getWidgetConfigFlow(appWidgetId).collectAsState(initial = initialConfig)
 
@@ -137,9 +133,14 @@ private fun WidgetContent(
     val hasValidConfig = config != null && category != null
     val categoryName = category?.name
     val title = categoryName ?: "Things U Said"
-    val clickAction = if (hasValidConfig) {
+
+    // 点击头部：打开 App 定位到当前分组
+    val headerClickAction = if (hasValidConfig) {
         actionStartActivity(
-            Intent().setClassName("com.example.thingsusaid", "com.example.thingsusaid.MainActivity")
+            Intent().apply {
+                setClassName("com.example.thingsusaid", "com.example.thingsusaid.MainActivity")
+                putExtra("category_id", category?.categoryId ?: -1L)
+            }
         )
     } else {
         actionStartActivity(
@@ -148,6 +149,27 @@ private fun WidgetContent(
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
             }
         )
+    }
+
+    // 点击 + 按钮：打开 MainActivity 携带新建意图
+    val addAction = actionStartActivity(
+        Intent().apply {
+            setClassName("com.example.thingsusaid", "com.example.thingsusaid.MainActivity")
+            putExtra("category_id", category?.categoryId ?: -1L)
+            putExtra("action", "create_note")
+        }
+    )
+
+    // 点击便签文本：打开 App
+    val noteClickAction = if (hasValidConfig) {
+        actionStartActivity(
+            Intent().apply {
+                setClassName("com.example.thingsusaid", "com.example.thingsusaid.MainActivity")
+                putExtra("category_id", category?.categoryId ?: -1L)
+            }
+        )
+    } else {
+        headerClickAction
     }
 
     val maxNotes = when (sizeCategory) {
@@ -162,22 +184,49 @@ private fun WidgetContent(
     val blue = android.graphics.Color.blue(baseColor)
     val bgColor = Color(red / 255f, green / 255f, blue / 255f, alpha / 255f)
 
+    // 解析分组颜色用于指示条
+    val categoryColor = try {
+        category?.colorHex?.let { Color(android.graphics.Color.parseColor(it)) }
+    } catch (_: Exception) {
+        null
+    }
+
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
             .background(ColorProvider(bgColor))
             .cornerRadius(24.dp)
-            .clickable(clickAction)
-            .padding(16.dp)
+            .padding(20.dp)
     ) {
-        Text(
-            text = title,
-            style = TextStyle(
-                color = ColorProvider(R.color.widget_title),
-                fontSize = titleSize
+        // 头部：左侧分组名称（加粗 18sp）+ 右侧 + 按钮
+        Row(
+            modifier = GlanceModifier
+                .fillMaxWidth()
+                .clickable(headerClickAction),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = TextStyle(
+                    color = ColorProvider(R.color.widget_title),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                modifier = GlanceModifier.defaultWeight()
             )
-        )
-        Spacer(modifier = GlanceModifier.height(8.dp))
+            if (hasValidConfig) {
+                Text(
+                    text = "+",
+                    style = TextStyle(
+                        color = ColorProvider(R.color.widget_primary),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    modifier = GlanceModifier.clickable(addAction)
+                )
+            }
+        }
+        Spacer(modifier = GlanceModifier.height(10.dp))
         when {
             !hasValidConfig -> {
                 Text(
@@ -199,8 +248,13 @@ private fun WidgetContent(
             }
             else -> {
                 notes.take(maxNotes).forEach { note ->
-                    NoteRow(note = note, fontSize = fontSize)
-                    Spacer(modifier = GlanceModifier.height(6.dp))
+                    NoteRow(
+                        note = note,
+                        fontSize = fontSize,
+                        categoryColor = categoryColor,
+                        noteClickAction = noteClickAction
+                    )
+                    Spacer(modifier = GlanceModifier.height(12.dp))
                 }
             }
         }
@@ -208,16 +262,24 @@ private fun WidgetContent(
 }
 
 @Composable
-private fun NoteRow(note: Note, fontSize: androidx.compose.ui.unit.TextUnit) {
+private fun NoteRow(
+    note: Note,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    categoryColor: Color?,
+    noteClickAction: androidx.glance.action.Action
+) {
     if (note.isTodo) {
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 圆形选框：未选中 ○ / 选中 ◉
             Text(
-                text = if (note.isCompleted) "☑" else "☐",
+                text = if (note.isCompleted) "◉" else "○",
                 style = TextStyle(
-                    color = ColorProvider(R.color.widget_primary),
+                    color = ColorProvider(
+                        if (note.isCompleted) R.color.widget_primary else R.color.widget_text_secondary
+                    ),
                     fontSize = fontSize
                 ),
                 modifier = GlanceModifier.clickable(
@@ -235,18 +297,39 @@ private fun NoteRow(note: Note, fontSize: androidx.compose.ui.unit.TextUnit) {
                     color = ColorProvider(
                         if (note.isCompleted) R.color.widget_text_secondary else R.color.widget_text
                     ),
+                    fontSize = fontSize,
+                    textDecoration = if (note.isCompleted) TextDecoration.LineThrough else null
+                ),
+                modifier = GlanceModifier
+                    .defaultWeight()
+                    .clickable(noteClickAction)
+            )
+        }
+    } else {
+        // 便签项：左侧彩色垂直指示条 + 文本
+        Row(
+            modifier = GlanceModifier
+                .fillMaxWidth()
+                .clickable(noteClickAction),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 彩色垂直指示条（用带背景色的 Spacer 近似实现）
+            Spacer(
+                modifier = GlanceModifier
+                    .width(3.dp)
+                    .height(16.dp)
+                    .cornerRadius(1.5.dp)
+                    .background(ColorProvider(categoryColor ?: Color(0xFFD0BCFF)))
+            )
+            Spacer(modifier = GlanceModifier.width(8.dp))
+            Text(
+                text = note.title,
+                style = TextStyle(
+                    color = ColorProvider(R.color.widget_text),
                     fontSize = fontSize
                 ),
                 modifier = GlanceModifier.defaultWeight()
             )
         }
-    } else {
-        Text(
-            text = "• ${note.title}",
-            style = TextStyle(
-                color = ColorProvider(R.color.widget_text),
-                fontSize = fontSize
-            )
-        )
     }
 }
