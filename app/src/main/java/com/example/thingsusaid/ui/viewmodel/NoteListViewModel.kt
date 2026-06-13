@@ -61,6 +61,12 @@ class NoteListViewModel(
         }
     }
 
+    fun updateSortOrders(items: List<Pair<Long, Int>>) {
+        viewModelScope.launch {
+            repository.updateNoteSortOrders(items)
+        }
+    }
+
     class Factory(
         private val application: Application,
         private val categoryId: Long

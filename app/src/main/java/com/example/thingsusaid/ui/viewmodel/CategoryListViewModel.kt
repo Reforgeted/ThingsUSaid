@@ -46,4 +46,10 @@ class CategoryListViewModel(application: Application) : AndroidViewModel(applica
             }
         }
     }
+
+    fun updateSortOrders(items: List<Pair<Long, Int>>) {
+        viewModelScope.launch {
+            repository.updateCategorySortOrders(items)
+        }
+    }
 }

@@ -1,6 +1,7 @@
 package com.example.thingsusaid
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -8,6 +9,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
@@ -27,6 +34,11 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { }
 
+    var pendingCategoryId by mutableLongStateOf(-1L)
+        private set
+    var pendingAction by mutableStateOf("")
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -38,13 +50,30 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val initialCategoryId = intent.getLongExtra("category_id", -1L).takeIf { it != -1L }
+        handleIntent(intent)
 
         setContent {
             ThingsUSaidTheme {
-                AppNavigation(initialCategoryId = initialCategoryId)
+                AppNavigation(
+                    initialCategoryId = pendingCategoryId.takeIf { it != -1L },
+                    initialOpenCreateNote = pendingAction == "create_note",
+                    onNewAction = { action ->
+                        pendingAction = action
+                    }
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent) {
+        pendingCategoryId = intent.getLongExtra("category_id", -1L)
+        pendingAction = intent.getStringExtra("action") ?: ""
     }
 
     override fun onResume() {
@@ -56,12 +85,34 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun AppNavigation(initialCategoryId: Long?) {
+fun AppNavigation(
+    initialCategoryId: Long?,
+    initialOpenCreateNote: Boolean = false,
+    onNewAction: (String) -> Unit = {}
+) {
     val navController = rememberNavController()
     val startDestination = if (initialCategoryId != null) {
         Routes.noteList(initialCategoryId)
     } else {
         Routes.CATEGORY_LIST
+    }
+
+    var hasHandledInitialNav by remember { mutableStateOf(false) }
+
+    val activity = androidx.compose.ui.platform.LocalContext.current as? MainActivity
+    LaunchedEffect(activity?.pendingCategoryId, activity?.pendingAction) {
+        if (activity != null && hasHandledInitialNav) {
+            val catId = activity.pendingCategoryId.takeIf { it != -1L }
+            val action = activity.pendingAction
+            if (catId != null) {
+                navController.navigate(Routes.noteList(catId)) {
+                    popUpTo(Routes.CATEGORY_LIST) { inclusive = false }
+                    launchSingleTop = true
+                }
+                onNewAction("")
+            }
+        }
+        hasHandledInitialNav = true
     }
 
     NavHost(navController = navController, startDestination = startDestination) {
@@ -77,9 +128,11 @@ fun AppNavigation(initialCategoryId: Long?) {
         }
         composable("note_list/{categoryId}") { backStackEntry ->
             val categoryId = backStackEntry.arguments?.getString("categoryId")?.toLongOrNull() ?: return@composable
+            val isStartDestination = startDestination.startsWith("note_list")
             NoteListScreen(
                 categoryId = categoryId,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                autoOpenCreate = isStartDestination && initialOpenCreateNote
             )
         }
         composable(Routes.SETTINGS) {

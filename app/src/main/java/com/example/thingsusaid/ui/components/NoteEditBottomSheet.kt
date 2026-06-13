@@ -1,7 +1,9 @@
 package com.example.thingsusaid.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,8 +28,6 @@ fun NoteEditBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val sheetHeight = (configuration.screenHeightDp * 0.9f).dp
 
     var title by remember(note) { mutableStateOf(note?.title ?: "") }
     var content by remember(note) { mutableStateOf(note?.content ?: "") }
@@ -48,7 +48,7 @@ fun NoteEditBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(sheetHeight)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp)
         ) {
@@ -74,10 +74,8 @@ fun NoteEditBottomSheet(
                 value = content,
                 onValueChange = { content = it },
                 label = { Text("内容") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                maxLines = 10
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 5
             )
             Spacer(modifier = Modifier.height(12.dp))
             Row(

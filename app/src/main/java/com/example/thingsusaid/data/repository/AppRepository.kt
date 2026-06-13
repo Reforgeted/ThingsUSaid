@@ -140,4 +140,16 @@ class AppRepository(context: Context) {
             TodoWidgetUpdater.updateForCategory(appContext, it.categoryId)
         }
     }
+
+    suspend fun updateCategorySortOrders(items: List<Pair<Long, Int>>) {
+        items.forEach { (id, sortOrder) ->
+            dao.updateCategorySortOrder(id, sortOrder)
+        }
+    }
+
+    suspend fun updateNoteSortOrders(items: List<Pair<Long, Int>>) {
+        items.forEach { (id, sortOrder) ->
+            dao.updateNoteSortOrder(id, sortOrder)
+        }
+    }
 }

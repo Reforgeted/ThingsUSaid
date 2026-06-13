@@ -19,6 +19,8 @@ import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
@@ -51,19 +53,6 @@ class TodoGlanceWidget : GlanceAppWidget() {
         val dao = AppDatabase.getInstance(context).appDao()
         val initialConfig = dao.getWidgetConfig(appWidgetId)
         val initialCategory = initialConfig?.boundCategoryId?.let { dao.getCategoryById(it) }
-        val initialNotes = initialCategory?.categoryId
-            ?.let { dao.getNotesByCategoryId(it) }
-            ?: emptyList()
-
-        // 读取尺寸
-        val appWidgetManager = AppWidgetManager.getInstance(context)
-        val options = appWidgetManager.getAppWidgetOptions(appWidgetId)
-        val minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
-        val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
-        val sizeCategory = when {
-            minWidth <= 180 && minHeight <= 180 -> SizeCategory.MEDIUM
-            else -> SizeCategory.LARGE
-        }
 
         // 读取初始设置值
         val initialBgAlpha = dao.getSetting("widget_bg_alpha")?.value?.toIntOrNull() ?: 255
@@ -75,17 +64,11 @@ class TodoGlanceWidget : GlanceAppWidget() {
                 dao = dao,
                 initialConfig = initialConfig,
                 initialCategory = initialCategory,
-                initialNotes = initialNotes,
-                sizeCategory = sizeCategory,
                 initialBgAlpha = initialBgAlpha,
                 initialFontSizeIndex = initialFontSizeIndex
             )
         }
     }
-}
-
-private enum class SizeCategory {
-    MEDIUM, LARGE
 }
 
 @Composable
@@ -94,12 +77,10 @@ private fun WidgetContent(
     dao: AppDao,
     initialConfig: WidgetConfig?,
     initialCategory: Category?,
-    initialNotes: List<Note>,
-    sizeCategory: SizeCategory,
     initialBgAlpha: Int,
     initialFontSizeIndex: Int
 ) {
-    // 通过 Room Flow 监听设置变化，和分组数据用同样的机制
+    // 通过 Room Flow 监听设置变化
     val bgAlphaSetting by dao.getSettingFlow("widget_bg_alpha")
         .collectAsState(initial = null)
     val fontSizeSetting by dao.getSettingFlow("widget_font_size")
@@ -125,14 +106,20 @@ private fun WidgetContent(
     val notesFlow = remember(category?.categoryId) {
         category?.categoryId?.let { dao.getNotesByCategoryFlow(it) }
             ?: flowOf(emptyList())
-        }
-    val notesInitial = initialNotes.takeIf { initialCategory?.categoryId == category?.categoryId }
-        ?: emptyList()
-    val notes by notesFlow.collectAsState(initial = notesInitial)
+    }
+    val notes by notesFlow.collectAsState(initial = emptyList())
 
     val hasValidConfig = config != null && category != null
     val categoryName = category?.name
     val title = categoryName ?: "Things U Said"
+
+    // 未配置时：整个 widget 点击打开配置页
+    val configClickAction = actionStartActivity(
+        Intent().apply {
+            setClassName("com.example.thingsusaid", "com.example.thingsusaid.widget.config.WidgetConfigActivity")
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+        }
+    )
 
     // 点击头部：打开 App 定位到当前分组
     val headerClickAction = if (hasValidConfig) {
@@ -143,20 +130,16 @@ private fun WidgetContent(
             }
         )
     } else {
-        actionStartActivity(
-            Intent().apply {
-                setClassName("com.example.thingsusaid", "com.example.thingsusaid.widget.config.WidgetConfigActivity")
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            }
-        )
+        configClickAction
     }
 
-    // 点击 + 按钮：打开 MainActivity 携带新建意图
+    // 点击 + 按钮：打开 App 并弹出编辑页
     val addAction = actionStartActivity(
         Intent().apply {
             setClassName("com.example.thingsusaid", "com.example.thingsusaid.MainActivity")
             putExtra("category_id", category?.categoryId ?: -1L)
             putExtra("action", "create_note")
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
     )
 
@@ -169,12 +152,7 @@ private fun WidgetContent(
             }
         )
     } else {
-        headerClickAction
-    }
-
-    val maxNotes = when (sizeCategory) {
-        SizeCategory.MEDIUM -> 2
-        SizeCategory.LARGE -> 5
+        configClickAction
     }
 
     val baseColor = android.graphics.Color.parseColor("#FF1C1B1F")
@@ -184,37 +162,64 @@ private fun WidgetContent(
     val blue = android.graphics.Color.blue(baseColor)
     val bgColor = Color(red / 255f, green / 255f, blue / 255f, alpha / 255f)
 
-    // 解析分组颜色用于指示条
     val categoryColor = try {
         category?.colorHex?.let { Color(android.graphics.Color.parseColor(it)) }
     } catch (_: Exception) {
         null
     }
 
-    Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .background(ColorProvider(bgColor))
-            .cornerRadius(24.dp)
-            .padding(20.dp)
-    ) {
-        // 头部：左侧分组名称（加粗 18sp）+ 右侧 + 按钮
-        Row(
+    if (!hasValidConfig) {
+        // 未配置时：整个 widget 可点击，保留标头
+        Column(
             modifier = GlanceModifier
-                .fillMaxWidth()
-                .clickable(headerClickAction),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .background(ColorProvider(bgColor))
+                .cornerRadius(24.dp)
+                .clickable(configClickAction)
+                .padding(20.dp)
         ) {
             Text(
-                text = title,
+                text = "Things U Said",
                 style = TextStyle(
                     color = ColorProvider(R.color.widget_title),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
-                ),
-                modifier = GlanceModifier.defaultWeight()
+                )
             )
-            if (hasValidConfig) {
+            Spacer(modifier = GlanceModifier.height(10.dp))
+            Text(
+                text = if (categoryName == null) "点击选择分组" else "分组已删除，点击重新配置",
+                style = TextStyle(
+                    color = ColorProvider(R.color.widget_text_secondary),
+                    fontSize = fontSize
+                )
+            )
+        }
+    } else {
+        // 已配置：头部固定 + 内容可滚动
+        Column(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(ColorProvider(bgColor))
+                .cornerRadius(24.dp)
+                .padding(20.dp)
+        ) {
+            // 头部：左侧分组名称 + 右侧 + 按钮
+            Row(
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .clickable(headerClickAction),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    style = TextStyle(
+                        color = ColorProvider(R.color.widget_title),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    modifier = GlanceModifier.defaultWeight()
+                )
                 Text(
                     text = "+",
                     style = TextStyle(
@@ -225,19 +230,17 @@ private fun WidgetContent(
                     modifier = GlanceModifier.clickable(addAction)
                 )
             }
-        }
-        Spacer(modifier = GlanceModifier.height(10.dp))
-        when {
-            !hasValidConfig -> {
-                Text(
-                    text = if (categoryName == null) "点击选择分组" else "分组已删除，点击重新配置",
-                    style = TextStyle(
-                        color = ColorProvider(R.color.widget_text_secondary),
-                        fontSize = fontSize
-                    )
-                )
-            }
-            notes.isEmpty() -> {
+            Spacer(modifier = GlanceModifier.height(10.dp))
+            // 分界线
+            Spacer(
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(ColorProvider(Color.White.copy(alpha = 0.15f)))
+            )
+            Spacer(modifier = GlanceModifier.height(10.dp))
+
+            if (notes.isEmpty()) {
                 Text(
                     text = "该分组暂无便签",
                     style = TextStyle(
@@ -245,16 +248,20 @@ private fun WidgetContent(
                         fontSize = fontSize
                     )
                 )
-            }
-            else -> {
-                notes.take(maxNotes).forEach { note ->
-                    NoteRow(
-                        note = note,
-                        fontSize = fontSize,
-                        categoryColor = categoryColor,
-                        noteClickAction = noteClickAction
-                    )
-                    Spacer(modifier = GlanceModifier.height(12.dp))
+            } else {
+                // LazyColumn 支持滚动，自动根据 widget 大小显示条目
+                LazyColumn(
+                    modifier = GlanceModifier.fillMaxSize()
+                ) {
+                    items(notes) { note ->
+                        NoteRow(
+                            note = note,
+                            fontSize = fontSize,
+                            categoryColor = categoryColor,
+                            noteClickAction = noteClickAction
+                        )
+                        Spacer(modifier = GlanceModifier.height(12.dp))
+                    }
                 }
             }
         }
@@ -273,7 +280,6 @@ private fun NoteRow(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 圆形选框：未选中 ○ / 选中 ◉
             Text(
                 text = if (note.isCompleted) "◉" else "○",
                 style = TextStyle(
@@ -306,14 +312,12 @@ private fun NoteRow(
             )
         }
     } else {
-        // 便签项：左侧彩色垂直指示条 + 文本
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
                 .clickable(noteClickAction),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 彩色垂直指示条（用带背景色的 Spacer 近似实现）
             Spacer(
                 modifier = GlanceModifier
                     .width(3.dp)

@@ -1,11 +1,8 @@
 package com.example.thingsusaid.ui.screens
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +14,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.thingsusaid.data.entity.Category
 import com.example.thingsusaid.ui.components.AddCategoryDialog
 import com.example.thingsusaid.ui.components.CategoryCard
+import com.example.thingsusaid.ui.components.ReorderableLazyColumn
 import com.example.thingsusaid.ui.viewmodel.CategoryListViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,6 +27,16 @@ fun CategoryListScreen(
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
     var categoryToDelete by remember { mutableStateOf<Category?>(null) }
+    var categoryForMenu by remember { mutableStateOf<Category?>(null) }
+    var reorderedCategories by remember { mutableStateOf(categories) }
+    var isDragging by remember { mutableStateOf(false) }
+
+    // 拖动期间不同步数据库，避免覆盖本地排序状态
+    LaunchedEffect(categories) {
+        if (!isDragging) {
+            reorderedCategories = categories
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -56,23 +64,44 @@ fun CategoryListScreen(
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
         ) {
-            if (categories.isEmpty()) {
+            if (reorderedCategories.isEmpty()) {
                 EmptyState(
                     title = "还没有分组",
                     subtitle = "点击右下角按钮创建你的第一个分组"
                 )
             } else {
-                LazyColumn(
+                ReorderableLazyColumn(
+                    items = reorderedCategories,
+                    key = { it.categoryId },
+                    onMove = { fromIndex, toIndex ->
+                        val mutableList = reorderedCategories.toMutableList()
+                        val item = mutableList.removeAt(fromIndex)
+                        mutableList.add(toIndex, item)
+                        reorderedCategories = mutableList
+                        viewModel.updateSortOrders(
+                            mutableList.mapIndexed { index, cat ->
+                                cat.categoryId to index
+                            }
+                        )
+                    },
+                    onLongPressWithoutDrag = { category ->
+                        categoryForMenu = category
+                    },
+                    onDragStateChanged = { dragging ->
+                        isDragging = dragging
+                        // 拖动结束后同步数据库最新状态
+                        if (!dragging) {
+                            reorderedCategories = categories
+                        }
+                    },
                     contentPadding = PaddingValues(vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(categories, key = { it.categoryId }) { category ->
-                        CategoryCard(
-                            category = category,
-                            onClick = { onCategoryClick(category.categoryId) },
-                            onLongClick = { categoryToDelete = category }
-                        )
-                    }
+                ) { category, isDragging, dragModifier ->
+                    CategoryCard(
+                        category = category,
+                        onClick = { onCategoryClick(category.categoryId) },
+                        modifier = dragModifier
+                    )
                 }
             }
         }
@@ -83,6 +112,35 @@ fun CategoryListScreen(
             onDismiss = { showAddDialog = false },
             onConfirm = { name, color ->
                 viewModel.addCategory(name, color)
+            }
+        )
+    }
+
+    // 长按（未拖动）弹出的菜单
+    categoryForMenu?.let { category ->
+        AlertDialog(
+            onDismissRequest = { categoryForMenu = null },
+            title = { Text(category.name) },
+            text = {
+                Text("长按并拖动可以调整排序\n如需添加桌面小组件，请在桌面空白处长按 → 小组件 → 选择 Things U Said")
+            },
+            confirmButton = {
+                TextButton(onClick = { categoryForMenu = null }) {
+                    Text("知道了")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        categoryToDelete = category
+                        categoryForMenu = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("删除分组")
+                }
             }
         )
     }

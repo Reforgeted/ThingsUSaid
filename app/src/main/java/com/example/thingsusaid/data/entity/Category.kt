@@ -9,5 +9,6 @@ data class Category(
     val categoryId: Long = 0,
     val name: String,
     val colorHex: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val sortOrder: Int = 0
 )

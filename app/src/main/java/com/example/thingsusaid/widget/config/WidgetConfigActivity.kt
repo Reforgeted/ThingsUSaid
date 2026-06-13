@@ -43,23 +43,20 @@ class WidgetConfigActivity : ComponentActivity() {
                                     )
                                 )
 
-                            TodoWidgetUpdater.updateAppWidgetIds(
-                                context = this@WidgetConfigActivity,
-                                appWidgetIds = intArrayOf(appWidgetId)
-                            )
-
-                            // 带 configure 的 widget 系统不会自动发 UPDATE 广播，保留广播作为兼容兜底
-                            val intent = Intent(this@WidgetConfigActivity, com.example.thingsusaid.widget.TodoGlanceWidgetReceiver::class.java).apply {
-                                action = com.example.thingsusaid.widget.TodoGlanceWidgetReceiver.ACTION_CUSTOM_UPDATE
-                                putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
-                            }
-                            sendBroadcast(intent)
-
+                            // 先返回结果，再异步更新 widget
                             val resultValue = Intent().apply {
                                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                             }
                             setResult(RESULT_OK, resultValue)
                             finish()
+
+                            // finish 后再更新 widget，避免阻塞 UI
+                            launch {
+                                TodoWidgetUpdater.updateAppWidgetIds(
+                                    context = this@WidgetConfigActivity,
+                                    appWidgetIds = intArrayOf(appWidgetId)
+                                )
+                            }
                         }
                     }
                 )

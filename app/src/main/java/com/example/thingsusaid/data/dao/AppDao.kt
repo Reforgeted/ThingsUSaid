@@ -26,7 +26,7 @@ interface AppDao {
     @Delete
     suspend fun deleteCategory(category: Category)
 
-    @Query("SELECT * FROM categories ORDER BY createdAt DESC")
+    @Query("SELECT * FROM categories ORDER BY sortOrder ASC, createdAt DESC")
     fun getAllCategoriesFlow(): Flow<List<Category>>
 
     @Query("SELECT * FROM categories WHERE categoryId = :id")
@@ -49,10 +49,10 @@ interface AppDao {
     @Delete
     suspend fun deleteNote(note: Note)
 
-    @Query("SELECT * FROM notes WHERE categoryId = :catId ORDER BY isCompleted ASC, createdAt DESC")
+    @Query("SELECT * FROM notes WHERE categoryId = :catId ORDER BY isCompleted ASC, sortOrder ASC, createdAt DESC")
     fun getNotesByCategoryFlow(catId: Long): Flow<List<Note>>
 
-    @Query("SELECT * FROM notes WHERE categoryId = :catId ORDER BY isCompleted ASC, createdAt DESC")
+    @Query("SELECT * FROM notes WHERE categoryId = :catId ORDER BY isCompleted ASC, sortOrder ASC, createdAt DESC")
     suspend fun getNotesByCategoryId(catId: Long): List<Note>
 
     @Query("SELECT * FROM notes WHERE noteId = :id")
@@ -63,6 +63,12 @@ interface AppDao {
 
     @Query("SELECT * FROM notes WHERE reminderTime IS NOT NULL AND reminderTime > :currentTime")
     suspend fun getNotesWithFutureReminders(currentTime: Long = System.currentTimeMillis()): List<Note>
+
+    @Query("UPDATE categories SET sortOrder = :sortOrder WHERE categoryId = :categoryId")
+    suspend fun updateCategorySortOrder(categoryId: Long, sortOrder: Int)
+
+    @Query("UPDATE notes SET sortOrder = :sortOrder WHERE noteId = :noteId")
+    suspend fun updateNoteSortOrder(noteId: Long, sortOrder: Int)
 
     // ==================== 小组件配置操作 ====================
 

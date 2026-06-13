@@ -28,5 +28,6 @@ data class Note(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val dueDate: Long? = null,
-    val reminderTime: Long? = null
+    val reminderTime: Long? = null,
+    val sortOrder: Int = 0
 )
