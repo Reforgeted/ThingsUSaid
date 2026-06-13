@@ -6,6 +6,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.thingsusaid.data.entity.Note
@@ -24,6 +26,9 @@ fun NoteEditBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val sheetHeight = (configuration.screenHeightDp * 0.9f).dp
+
     var title by remember(note) { mutableStateOf(note?.title ?: "") }
     var content by remember(note) { mutableStateOf(note?.content ?: "") }
     var isTodo by remember(note) { mutableStateOf(note?.isTodo ?: false) }
@@ -37,19 +42,26 @@ fun NoteEditBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        scrimColor = Color.Black.copy(alpha = 0.4f)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(sheetHeight)
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp)
         ) {
-            Text(
-                text = if (isEditing) "编辑" else "新建",
-                style = MaterialTheme.typography.headlineSmall
-            )
-            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text("完成", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
@@ -64,8 +76,8 @@ fun NoteEditBottomSheet(
                 label = { Text("内容") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 100.dp),
-                maxLines = 5
+                    .weight(1f),
+                maxLines = 10
             )
             Spacer(modifier = Modifier.height(12.dp))
             Row(
