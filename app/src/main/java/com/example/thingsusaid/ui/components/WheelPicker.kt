@@ -2,6 +2,7 @@ package com.example.thingsusaid.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -38,11 +39,11 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * 单列滚轮选择器
+ * 单列滚轮选择器（支持惯性滚动）
  *
  * @param items 数据列表
  * @param selectedIndex 当前选中索引
- * @param onSelectedChange 选中项变化回调（拖拽过程中实时触发）
+ * @param onSelectedChange 选中项变化回调（拖拽/惯性滚动过程中实时触发）
  * @param onConfirmed 选择确认回调（拖拽结束或点击时触发）
  * @param modifier 修饰符
  * @param visibleItemCount 可见条目数（默认5，奇数）
@@ -64,12 +65,21 @@ fun WheelPicker(
     val coroutineScope = rememberCoroutineScope()
 
     // 用 Animatable 跟踪连续滚动位置（单位：item索引，可以是小数）
-    val scrollPosition = remember { Animatable(selectedIndex.toFloat()) }
+    val scrollPosition = remember {
+        Animatable(
+            initialValue = selectedIndex.toFloat(),
+            visibilityThreshold = 0.01f
+        )
+    }
+    // 设置边界，animateDecay 到达边界时会自动停止
+    LaunchedEffect(items.lastIndex) {
+        scrollPosition.updateBounds(0f, items.lastIndex.toFloat())
+    }
     var isDragging by remember { mutableStateOf(false) }
 
-    // 外部 selectedIndex 变化时同步（非拖拽状态下）
+    // 外部 selectedIndex 变化时同步（非拖拽/非惯性滚动状态下）
     LaunchedEffect(selectedIndex) {
-        if (!isDragging) {
+        if (!isDragging && !scrollPosition.isRunning) {
             scrollPosition.snapTo(selectedIndex.toFloat())
         }
     }
@@ -95,6 +105,10 @@ fun WheelPicker(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     var totalDragY = 0f
                     var dragStarted = false
+
+                    // 速度采样：记录最近几帧的位移和时间
+                    val velocitySamples = mutableListOf<Pair<Long, Float>>() // timestamp, deltaY
+                    val maxSamples = 5
 
                     do {
                         val event = awaitPointerEvent()
@@ -122,25 +136,83 @@ fun WheelPicker(
                             if (newIndex != selectedIndex) {
                                 onSelectedChange(newIndex)
                             }
+
+                            // 采集速度样本
+                            velocitySamples.add(System.nanoTime() to -deltaY) // 像素/帧，向上为正
+                            if (velocitySamples.size > maxSamples) {
+                                velocitySamples.removeAt(0)
+                            }
                         }
                     } while (true)
 
                     if (dragStarted) {
-                        // 拖拽结束，吸附到最近项
-                        val target = scrollPosition.value.roundToInt()
-                            .coerceIn(0, items.lastIndex)
-                        coroutineScope.launch {
-                            scrollPosition.animateTo(
-                                targetValue = target.toFloat(),
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
+                        // 计算释放速度（像素/秒）
+                        val velocityPxPerSec = if (velocitySamples.size >= 2) {
+                            val first = velocitySamples.first()
+                            val last = velocitySamples.last()
+                            val timeDiffSec = (last.first - first.first) / 1_000_000_000f
+                            if (timeDiffSec > 0.001f) {
+                                val totalDelta = velocitySamples.sumOf { it.second.toDouble() }.toFloat()
+                                totalDelta / timeDiffSec
+                            } else 0f
+                        } else 0f
+
+                        // 转换为 item/秒
+                        val velocityItemsPerSec = velocityPxPerSec / itemHeightPx
+
+                        if (abs(velocityItemsPerSec) > 0.5f) {
+                            // 有足够速度，触发惯性滚动
+                            val flingJob = coroutineScope.launch {
+                                try {
+                                    scrollPosition.animateDecay(
+                                        initialVelocity = velocityItemsPerSec,
+                                        animationSpec = exponentialDecay(frictionMultiplier = 0.6f)
+                                    ) {
+                                        // 实时通知选中项变化
+                                        val idx = value.roundToInt()
+                                        if (idx != selectedIndex) {
+                                            onSelectedChange(idx)
+                                        }
+                                    }
+                                } catch (_: Exception) {
+                                    // 动画被取消（边界碰撞），正常流程
+                                } finally {
+                                    // 惯性滚动结束，吸附到最近项
+                                    val currentVal = scrollPosition.value
+                                        .coerceIn(0f, items.lastIndex.toFloat())
+                                    scrollPosition.snapTo(currentVal)
+                                    val target = currentVal.roundToInt()
+                                    scrollPosition.animateTo(
+                                        targetValue = target.toFloat(),
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                            stiffness = Spring.StiffnessMedium
+                                        )
+                                    )
+                                    isDragging = false
+                                    onConfirmed(target)
+                                    if (target != selectedIndex) {
+                                        onSelectedChange(target)
+                                    }
+                                }
+                            }
+                        } else {
+                            // 速度不足，直接吸附到最近项
+                            val target = scrollPosition.value.roundToInt()
+                                .coerceIn(0, items.lastIndex)
+                            coroutineScope.launch {
+                                scrollPosition.animateTo(
+                                    targetValue = target.toFloat(),
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    )
                                 )
-                            )
-                            isDragging = false
-                            onConfirmed(target)
-                            if (target != selectedIndex) {
-                                onSelectedChange(target)
+                                isDragging = false
+                                onConfirmed(target)
+                                if (target != selectedIndex) {
+                                    onSelectedChange(target)
+                                }
                             }
                         }
                     }
